@@ -4,6 +4,7 @@ from os import path
 import sys
 import zipfile
 import gzip
+import argparse
 
 SHELL_STATIC_FILES = [
     "shell/logo.svg",
@@ -11,18 +12,25 @@ SHELL_STATIC_FILES = [
 ]
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 3:
-        print(f"Usage: {argv[0]} <file.html> <ouptut.zip>")
-        return 1
+    parser = argparse.ArgumentParser(
+        prog='empack',
+        description='Package an emscripten project',
+    )
+    parser.add_argument(
+        "input",
+        help="Path to the input .js or .wasm file",
+    )
+    parser.add_argument(
+        "output",
+        help="Path to the output .zip file",
+    )
+    args = parser.parse_args()
 
-    input = argv[1]
-    output = argv[2]
-
-    basename = path.splitext(input)[0]
+    basename = path.splitext(args.input)[0]
     project_name = path.basename(basename)
 
     with zipfile.ZipFile(
-        file=output,
+        file=args.output,
         mode='w',
         compression=zipfile.ZIP_DEFLATED,
     ) as archive:
