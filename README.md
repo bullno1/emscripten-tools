@@ -19,3 +19,16 @@ The loader is aware of that and will always report the correct progress against 
 The preloaded `.data` file will be packed as `.data.pck`.
 This hints itch.io to apply gzip compression.
 As emscripten internal loader is aware of the unpacked size, the reported progress will be accurate.
+
+### Customization
+
+Just copy `empack` and the files in `shell` into your project and modify them.
+
+## emserve
+
+Serve a zip file packaged by empack.
+This is only suitable for development and not production.
+
+[Cross-origin headers](https://developer.mozilla.org/en-US/docs/Web/API/Performance/now#security_requirements) are automatically added.
+
+The zip file is also checked for modification and reloaded if needed.

@@ -1,0 +1,159 @@
+#!/usr/bin/env python3
+
+import argparse
+import io
+import mimetypes
+import os
+import sys
+import urllib.parse
+import zipfile
+from http.server import HTTPServer, SimpleHTTPRequestHandler
+from threading import Lock
+
+
+def main(argv):
+    parser = argparse.ArgumentParser(
+        prog='emserve',
+        description='Serve a zip file packaged by empack',
+    )
+    parser.add_argument("zipfile", help="ZIP archive to serve")
+    parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument("--bind", default="0.0.0.0")
+    args = parser.parse_args(argv[1:])
+
+    ZipHTTPRequestHandler.zip_file_path = args.zipfile
+
+    server = HTTPServer((args.bind, args.port), ZipHTTPRequestHandler)
+    print(f"Serving {args.zipfile} on http://{args.bind}:{args.port} ...")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\nKeyboard interrupt, exiting")
+        server.server_close()
+
+
+class ZipHTTPRequestHandler(SimpleHTTPRequestHandler):
+    """HTTP handler that serves files from a zip archive with auto-reload."""
+
+    COOP_HEADER = "same-origin"
+    COEP_HEADER = "require-corp"
+    ZIP_LOCK = Lock()  # ensure thread safety when reloading
+
+    # Shared across all handler instances
+    zip_file_path = None
+    zip_mtime = None
+    zip_file = None
+
+    def end_headers(self):
+        """Add COOP/COEP headers to every response."""
+        self.send_header("Cross-Origin-Opener-Policy", self.COOP_HEADER)
+        self.send_header("Cross-Origin-Embedder-Policy", self.COEP_HEADER)
+        super().end_headers()
+
+    @classmethod
+    def check_reload_zip(cls):
+        """Reload the zipfile if it was updated."""
+        with cls.ZIP_LOCK:
+            try:
+                mtime = os.path.getmtime(cls.zip_file_path)
+            except FileNotFoundError:
+                return
+            if cls.zip_file is None or mtime != cls.zip_mtime:
+                cls.zip_file = zipfile.ZipFile(cls.zip_file_path, "r")
+                cls.zip_mtime = mtime
+                print(f"[INFO] Reloaded ZIP file: {cls.zip_file_path}")
+
+    def translate_path(self, path):
+        return path
+
+    def do_GET(self):
+        self.check_reload_zip()
+        path = urllib.parse.unquote(self.path)
+        if path.startswith("/"):
+            path = path[1:]
+
+        zf = self.zip_file
+
+        # Serve index.html for root or directories
+        if path == "" or path.endswith("/"):
+            candidate = path + "index.html"
+            if candidate in zf.namelist():
+                self.serve_zip_file(candidate)
+                return
+            # Directory listing
+            if path and not path.endswith("/"):
+                self.send_response(301)
+                self.send_header("Location", self.path + "/")
+                self.end_headers()
+                return
+            self.list_zip_directory(path)
+            return
+
+        # Serve file if exists
+        if path in zf.namelist():
+            self.serve_zip_file(path)
+        else:
+            if any(name.startswith(path + "/") for name in zf.namelist()):
+                self.send_response(301)
+                self.send_header("Location", self.path + "/")
+                self.end_headers()
+                return
+            self.send_error(404, f"File not found: {path}")
+
+    def list_zip_directory(self, path):
+        zf = self.zip_file
+        path_prefix = path
+        files = set()
+        dirs = set()
+        for name in zf.namelist():
+            if not name.startswith(path_prefix):
+                continue
+            remainder = name[len(path_prefix):]
+            if not remainder:
+                continue
+            parts = remainder.split("/", 1)
+            if len(parts) == 1:
+                files.add(parts[0])
+            else:
+                dirs.add(parts[0])
+
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.end_headers()
+
+        title = f"Index of /{path}"
+        self.wfile.write(f"<html><head><title>{title}</title></head><body>\n".encode("utf-8"))
+        self.wfile.write(f"<h1>{title}</h1>\n<hr>\n<ul>\n".encode("utf-8"))
+
+        if path:
+            parent = "/".join(path.strip("/").split("/")[:-1])
+            if parent:
+                parent += "/"
+            self.wfile.write(f'<li><a href="/{parent}">../</a></li>\n'.encode("utf-8"))
+
+        for d in sorted(dirs):
+            self.wfile.write(f'<li><a href="{d}/">{d}/</a></li>\n'.encode("utf-8"))
+        for f in sorted(files):
+            self.wfile.write(f'<li><a href="{f}">{f}</a></li>\n'.encode("utf-8"))
+
+        self.wfile.write(b"</ul>\n<hr>\n</body></html>\n")
+
+    def serve_zip_file(self, path):
+        zf = self.zip_file
+        info = zf.getinfo(path)
+        self.send_response(200)
+        mime_type = mimetypes.guess_type(path)[0] or "application/octet-stream"
+        self.send_header("Content-Type", mime_type)
+        self.send_header("Content-Length", str(info.file_size))
+        self.end_headers()
+
+        with zf.open(path) as f:
+            while True:
+                chunk = f.read(64 * 1024)
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+
+
+if __name__ == "__main__":
+    main(sys.argv)
