@@ -154,6 +154,28 @@ class ZipHTTPRequestHandler(SimpleHTTPRequestHandler):
                     break
                 self.wfile.write(chunk)
 
+    def do_POST(self):
+        if self.path == "/stdio.html":
+            content_len = int(self.headers.get('Content-Length'))
+            body = self.rfile.read(content_len)
+            msg = body.decode('utf-8', 'ignore')
+            msg = urllib.parse.unquote(msg)
+            if '%u' in msg:
+                msg = msg.replace('%u', '\\u').decode('unicode_escape')
+
+            if msg == "^pageload^":
+                self.log_message("Page loaded")
+            elif msg.startswith("^out^") or msg.startswith("^err^"):
+                i = msg.index('^', 5)
+                seq_num = int(msg[5:i])
+                msg = msg[i + 1:]
+                self.log_message("%d, \"%s\"", seq_num, msg)
+            elif msg.startswith('^exit^'):
+                self.server.shutdown()
+
+            self.send_response(200)
+            self.end_headers()
+
 
 if __name__ == "__main__":
     main(sys.argv)
