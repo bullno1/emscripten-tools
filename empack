@@ -5,9 +5,9 @@ import sys
 import zipfile
 import gzip
 
-SHELL_FILES = [
-    "emscripten/logo.svg",
-    "emscripten/shell.css",
+SHELL_STATIC_FILES = [
+    "shell/logo.svg",
+    "shell/shell.css",
 ]
 
 def main(argv: list[str]) -> int:
@@ -26,9 +26,6 @@ def main(argv: list[str]) -> int:
         mode='w',
         compression=zipfile.ZIP_DEFLATED,
     ) as archive:
-        print(f"Packing {basename}.html")
-        archive.write(basename + ".html", "index.html")
-
         print(f"Packing {basename}.js")
         archive.write(basename + ".js", project_name + ".js")
 
@@ -41,30 +38,53 @@ def main(argv: list[str]) -> int:
             compress_type=zipfile.ZIP_STORED
         )
 
-        print(f"Packing {basename}.data")
         if path.exists(basename + ".data"):
+            print(f"Packing {basename}.data")
             archive.write(basename + ".data", project_name + ".data.pck")
 
-        print(f"Packing {basename}.wasm.debug.wasm")
         if path.exists(basename + ".wasm.debug.wasm"):
+            print(f"Packing {basename}.wasm.debug.wasm")
             archive.write(basename + ".wasm.debug.wasm", project_name + ".wasm.debug.wasm")
 
-        archive.mkdir("emscripten")
+        archive.mkdir("shell")
         script_dir = path.dirname(__file__)
-        for file in SHELL_FILES:
+        for file in SHELL_STATIC_FILES:
             file_path = path.join(script_dir, file)
             print(f"Packing {file_path}")
             archive.write(file_path, file)
 
-        shell_js_path = path.join(script_dir, "emscripten/shell.js")
-        print(f"Packing {shell_js_path}")
-        with open(shell_js_path, "r") as js_file:
-            shell_js = js_file.read()
-
-        archive.writestr(
-            "emscripten/shell.js",
-            data=shell_js.replace("{{UNPACKED_WASM_SIZE}}", str(len(wasm)))
+        pack_templated(
+            archive,
+            "index.html",
+            path.join(script_dir, "shell/index.html"),
+            {
+                "SCRIPT_NAME": project_name + ".js"
+            }
         )
+        pack_templated(
+            archive,
+            "shell/shell.js",
+            path.join(script_dir, "shell/shell.js"),
+            {
+                "UNPACKED_WASM_SIZE": str(len(wasm))
+            }
+        )
+
+
+def pack_templated(
+    archive: zipfile.ZipFile,
+    arc_name: str,
+    template_file_path: str,
+    template_params: dict[str, str]
+) -> None:
+    print(f"Packing {template_file_path}")
+    with open(template_file_path, "r") as template_file:
+        template_str = template_file.read()
+
+    for k, v in template_params.items():
+        template_str = template_str.replace("{{" + k + "}}", v)
+
+    archive.writestr(arc_name, data=template_str)
 
 if __name__ == "__main__":
     sys.exit(main(sys.argv))
