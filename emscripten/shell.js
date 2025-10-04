@@ -43,7 +43,12 @@ async function fetchAndInstantiateWasm(wasmUrl, onProgress = () => {}, imports =
 	const response = await fetch(wasmUrl);
 	if (!response.ok) throw new Error(`Failed to fetch ${wasmUrl}`);
 
-	const contentLength = +response.headers.get('Content-Length') || 0;
+	let contentLength = +response.headers.get('Content-Length') || 0;
+	const gzipEncoded = response.headers.get("Content-Encoding") == "gzip";
+	if (gzipEncoded) {
+		contentLength = parseInt("{{UNPACKED_WASM_SIZE}}") || contentLength;
+	}
+
 	const reader = response.body.getReader();
 	let loaded = 0;
 
@@ -68,7 +73,7 @@ async function fetchAndInstantiateWasm(wasmUrl, onProgress = () => {}, imports =
 	const headers = new Headers(response.headers);
 	headers.set("Content-Type", "application/wasm");
 	const trackedResponse = new Response(
-		headers.get("Content-Encoding") == "gzip"
+		gzipEncoded
 			? stream  // itch.io will append this header so browsers will expand by default
 			: stream.pipeThrough(new DecompressionStream("gzip")),
 		{

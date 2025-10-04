@@ -7,7 +7,6 @@ import gzip
 
 SHELL_FILES = [
     "emscripten/logo.svg",
-    "emscripten/shell.js",
     "emscripten/shell.css",
 ]
 
@@ -34,7 +33,13 @@ def main(argv: list[str]) -> int:
         archive.write(basename + ".js", project_name + ".js")
 
         print(f"Packing {basename}.wasm")
-        pack_gzip(archive, basename + ".wasm", project_name + ".wasmz")
+        with open(basename + ".wasm", "rb") as wasm_file:
+            wasm = wasm_file.read()
+        archive.writestr(
+            project_name + ".wasmz",
+            data=gzip.compress(wasm),
+            compress_type=zipfile.ZIP_STORED
+        )
 
         print(f"Packing {basename}.data")
         if path.exists(basename + ".data"):
@@ -51,11 +56,15 @@ def main(argv: list[str]) -> int:
             print(f"Packing {file_path}")
             archive.write(file_path, file)
 
-def pack_gzip(archive: zipfile.ZipFile, path: str, arc_name: str) -> None:
-    with open(path, "rb") as file:
-        data = file.read()
+        shell_js_path = path.join(script_dir, "emscripten/shell.js")
+        print(f"Packing {shell_js_path}")
+        with open(shell_js_path, "r") as js_file:
+            shell_js = js_file.read()
 
-    archive.writestr(arc_name, gzip.compress(data), compress_type=zipfile.ZIP_STORED)
+        archive.writestr(
+            "emscripten/shell.js",
+            data=shell_js.replace("{{UNPACKED_WASM_SIZE}}", str(len(wasm)))
+        )
 
 if __name__ == "__main__":
     sys.exit(main(sys.argv))
