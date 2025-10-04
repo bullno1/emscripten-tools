@@ -12,7 +12,7 @@ A loading screen will be shown for both the main wasm file and [preloaded data](
 
 The main `.wasm` file will be gzipped and archived as `.wasmz`.
 This is to ensure that the browser will always report the download progress instead of buffering the entire file until completion.
-When uploaded to itch.io, certain [files files](https://itch.io/docs/creators/html5#compression) will have the `Content-Encoding` header set to `gzip`.
+When uploaded to itch.io, certain [files types](https://itch.io/docs/creators/html5#compression) will have the `Content-Encoding` header set to `gzip`.
 The loader is aware of that and will always report the correct progress against the unpacked size.
 `WebAssembly.instantiateStreaming` is always used regardless of `Content-Encoding` to ensure fast startup time.
 
